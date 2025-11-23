@@ -4,18 +4,220 @@
  */
 package com.mycompany.trabalhofinal;
 
+import javax.swing.JOptionPane;
+import javax.swing.table.DefaultTableModel;
+import java.time.LocalDate;
+import java.util.Locale;
+import java.time.format.DateTimeParseException;
+import java.util.Map;
+
+import java.time.format.DateTimeFormatter;
+
+
 /**
  *
  * @author Usuario
  */
 public class InventoryGUI extends javax.swing.JFrame {
-
+    
     /**
      * Creates new form NewJFrame
      */
     public InventoryGUI() {
         initComponents();
+        fm.loadAll();
+        atualizarTabelaProdutos();
+        atualizarTabelaEntradas();
+        atualizarTabelaSaidas();
     }
+    
+    
+    private LocalDate parseDataFlex(String dataStr) {
+        if (dataStr == null) {
+            throw new IllegalArgumentException("Data vazia (null)");
+        }
+
+    // Normaliza: trim e remove caracteres invisíveis (NBSP, BOM, tabs)
+        dataStr = dataStr.trim()
+                         .replace("\uFEFF", "")   // BOM
+                         .replace("\u00A0", " ")  // NBSP -> espaço
+                         .replace("\t", " ")
+                         .replaceAll("\\s+", " ");
+
+        if (dataStr.isEmpty()) {
+            throw new IllegalArgumentException("Data vazia (string vazia)");
+        }
+
+        String original = dataStr; // para debug
+        dataStr = dataStr.toLowerCase(Locale.ROOT);
+
+    // Substitui separadores variados por "/"
+        dataStr = dataStr.replace("-", "/").replace(".", "/").replace("\\", "/");
+
+    // Mapeia nomes de mês (pt e en) para número
+        Map<String, String> meses = Map.ofEntries(
+            Map.entry("jan", "01"),
+            Map.entry("fev", "02"),
+            Map.entry("mar", "03"),
+            Map.entry("abr", "04"),
+            Map.entry("mai", "05"),
+            Map.entry("jun", "06"),
+            Map.entry("jul", "07"),
+            Map.entry("ago", "08"),
+            Map.entry("set", "09"),
+            Map.entry("out", "10"),
+            Map.entry("nov", "11"),
+            Map.entry("dez", "12")
+         );
+
+    // substitui nomes de mês por número (ex: "22 nov 2025" -> "22/11/2025")
+    for (Map.Entry<String, String> me : meses.entrySet()) {
+        String key = me.getKey();
+        String val = me.getValue();
+        // usa regex para pegar casos como " 22nov2025", "22 nov 2025", "22-nov-2025"
+        dataStr = dataStr.replaceAll("(?i)\\b" + key + "\\b", val);
+    }
+
+    // Se ainda houver letras, remover espaços extras
+    dataStr = dataStr.trim().replaceAll("/+", "/");
+
+    // Lista de padrões a tentar, em ordem
+    DateTimeFormatter[] formatos = new DateTimeFormatter[] {
+        DateTimeFormatter.ofPattern("dd/MM/yyyy"),
+        DateTimeFormatter.ofPattern("d/M/yyyy"),
+        DateTimeFormatter.ofPattern("dd/MM/yy"),
+        DateTimeFormatter.ofPattern("d/M/yy"),
+        DateTimeFormatter.ofPattern("yyyy/MM/dd"),
+        DateTimeFormatter.ofPattern("yyyy/M/d"),
+        DateTimeFormatter.ofPattern("ddMMyyyy"),
+        DateTimeFormatter.ofPattern("dMMyyyy"),
+        DateTimeFormatter.ofPattern("yyyyMMdd")
+    };
+
+    // Tenta com os padrões já com "/" já substituído
+    for (DateTimeFormatter fmt : formatos) {
+        try {
+            return LocalDate.parse(dataStr, fmt);
+        } catch (DateTimeParseException ex) {
+            // tenta próximo
+        }
+    }
+
+    // tentativa extra: separar por "/" e rearranjar se veio em ordem ISO 'yyyy/MM/dd'
+    String[] parts = dataStr.split("/");
+    if (parts.length == 3) {
+        // tenta detectar se está em yyyy/MM/dd sem sucesso anterior
+        if (parts[0].length() == 4) {
+            try {
+                int y = Integer.parseInt(parts[0]);
+                int m = Integer.parseInt(parts[1]);
+                int d = Integer.parseInt(parts[2]);
+                return LocalDate.of(y, m, d);
+            } catch (Exception ex) {}
+        }
+        // tenta dd/MM/yyyy novamente com parse por inteiros
+        try {
+            int d = Integer.parseInt(parts[0]);
+            int m = Integer.parseInt(parts[1]);
+            int y = Integer.parseInt(parts[2].length() == 2 ? ("20" + parts[2]) : parts[2]);
+            return LocalDate.of(y, m, d);
+        } catch (Exception ex) {}
+    }
+
+    // tentativa final: extrai apenas dígitos
+    String digits = dataStr.replaceAll("\\D", "");
+    if (digits.length() == 8) { // ddMMyyyy
+        try {
+            int d = Integer.parseInt(digits.substring(0,2));
+            int m = Integer.parseInt(digits.substring(2,4));
+            int y = Integer.parseInt(digits.substring(4,8));
+            return LocalDate.of(y, m, d);
+        } catch (Exception ex) {}
+    } else if (digits.length() == 6) { // ddMMyy
+        try {
+            int d = Integer.parseInt(digits.substring(0,2));
+            int m = Integer.parseInt(digits.substring(2,4));
+            int y = 2000 + Integer.parseInt(digits.substring(4,6));
+            return LocalDate.of(y, m, d);
+        } catch (Exception ex) {}
+    }
+
+    System.out.println("parseDataFlex failed para: '" + original + "' -> normalized: '" + dataStr + "'");
+
+    throw new IllegalArgumentException("Formato de data inválido: " + original);
+}
+
+
+
+
+    
+    private void atualizarTabelaEntradas() {
+        DefaultTableModel model = (DefaultTableModel) tabAdicao.getModel();
+        model.setRowCount(0);
+
+    for (Entrada e : fm.getEntradas()) {
+        model.addRow(new Object[]{
+            e.getData(),
+            e.getSku(),
+            e.getQuantidade(),
+            e.getValorUnitario()
+        });
+    }
+}
+
+
+    private void atualizarTabelaProdutos() {
+        DefaultTableModel model = (DefaultTableModel) tabProduto.getModel();
+        model.setRowCount(0);
+
+    for (Produto p : fm.getProdutos()) {
+        model.addRow(new Object[]{
+            p.getSku(), p.getNome(), p.getCategoria(),
+            p.getPrecoUnitario(), p.getQuantidade()
+        });
+    }
+}
+        private void atualizarTabelaSaidas() {
+        DefaultTableModel model = (DefaultTableModel) tabRemocao.getModel();
+        model.setRowCount(0);
+
+        for (Saida s : fm.getSaidas()) {
+            model.addRow(new Object[]{
+                s.getData(), s.getSku(), s.getQuantidade()
+            });
+        }
+    }
+        private void atualizarTabelaMovimentos() {
+        DefaultTableModel model = (DefaultTableModel) tabMovimentos.getModel();
+        model.setRowCount(0);
+
+    // Carregar entradas
+    for (Entrada e : fm.getEntradas()) {
+        model.addRow(new Object[]{
+            e.getData(),
+            "ENTRADA",
+            e.getSku(),
+            e.getQuantidade(),
+            e.getValorUnitario()
+        });
+    }
+
+    // Carregar saídas
+    for (Saida s : fm.getSaidas()) {
+        model.addRow(new Object[]{
+            s.getData(),
+            "SAÍDA",
+            s.getSku(),
+            s.getQuantidade(),
+            "—"
+        });
+    }
+}
+
+
+
+    
+    FileManager fm = new FileManager();
 
     /**
      * This method is called from within the constructor to initialize the form.
@@ -39,40 +241,46 @@ public class InventoryGUI extends javax.swing.JFrame {
         jLabel5 = new javax.swing.JLabel();
         txPreco = new javax.swing.JTextField();
         jcTabela = new javax.swing.JScrollPane();
-        jTable1 = new javax.swing.JTable();
+        tabProduto = new javax.swing.JTable();
         jbNovo = new javax.swing.JButton();
         jbExcluir = new javax.swing.JButton();
         jbSalvar = new javax.swing.JButton();
         jpEntrada = new javax.swing.JPanel();
         jLabel6 = new javax.swing.JLabel();
-        txID = new javax.swing.JTextField();
+        txSkuEntrada = new javax.swing.JTextField();
         jLabel7 = new javax.swing.JLabel();
-        txData = new javax.swing.JTextField();
+        txDataEntrada = new javax.swing.JTextField();
         jLabel8 = new javax.swing.JLabel();
-        txAdd = new javax.swing.JTextField();
+        txQtdEntrada = new javax.swing.JTextField();
         jLabel9 = new javax.swing.JLabel();
-        txValor = new javax.swing.JTextField();
+        txValorEntrada = new javax.swing.JTextField();
         jScrollPane2 = new javax.swing.JScrollPane();
         tabAdicao = new javax.swing.JTable();
+        jbRegEntrada = new javax.swing.JButton();
+        jLabel17 = new javax.swing.JLabel();
         jpSaida = new javax.swing.JPanel();
         jLabel10 = new javax.swing.JLabel();
-        txSKUE = new javax.swing.JTextField();
+        txSkuSaida = new javax.swing.JTextField();
         jLabel11 = new javax.swing.JLabel();
         txDataSaida = new javax.swing.JTextField();
         jLabel12 = new javax.swing.JLabel();
-        jTextField1 = new javax.swing.JTextField();
+        txQtdSaida = new javax.swing.JTextField();
         jScrollPane3 = new javax.swing.JScrollPane();
         tabRemocao = new javax.swing.JTable();
+        jbRegSaida = new javax.swing.JButton();
+        jLabel18 = new javax.swing.JLabel();
         jpSaldo = new javax.swing.JPanel();
         jLabel13 = new javax.swing.JLabel();
         jLabel14 = new javax.swing.JLabel();
-        jTextField2 = new javax.swing.JTextField();
-        jTextField3 = new javax.swing.JTextField();
+        txDataInicial = new javax.swing.JTextField();
+        txDataFim = new javax.swing.JTextField();
         jLabel15 = new javax.swing.JLabel();
         txSaldoTotal = new javax.swing.JTextField();
+        jbChecarSaldo = new javax.swing.JButton();
+        jLabel16 = new javax.swing.JLabel();
         jpMovimentos = new javax.swing.JPanel();
         jScrollPane4 = new javax.swing.JScrollPane();
-        jTable2 = new javax.swing.JTable();
+        tabMovimentos = new javax.swing.JTable();
         jPanel2 = new javax.swing.JPanel();
         bntProduto = new javax.swing.JButton();
         btnExit = new javax.swing.JButton();
@@ -114,7 +322,7 @@ public class InventoryGUI extends javax.swing.JFrame {
             }
         });
 
-        jTable1.setModel(new javax.swing.table.DefaultTableModel(
+        tabProduto.setModel(new javax.swing.table.DefaultTableModel(
             new Object [][] {
                 {null, null, null, null, null},
                 {null, null, null, null, null},
@@ -133,13 +341,18 @@ public class InventoryGUI extends javax.swing.JFrame {
                 return types [columnIndex];
             }
         });
-        jcTabela.setViewportView(jTable1);
+        jcTabela.setViewportView(tabProduto);
 
         jbNovo.setText("Novo");
 
         jbExcluir.setText("Excluir");
 
         jbSalvar.setText("Salvar");
+        jbSalvar.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jbSalvarActionPerformed(evt);
+            }
+        });
 
         javax.swing.GroupLayout jpProdutoLayout = new javax.swing.GroupLayout(jpProduto);
         jpProduto.setLayout(jpProdutoLayout);
@@ -211,7 +424,7 @@ public class InventoryGUI extends javax.swing.JFrame {
 
         jLabel7.setText("Data");
 
-        txData.setToolTipText("");
+        txDataEntrada.setToolTipText("");
 
         jLabel8.setText("Produtos a Adicionar");
 
@@ -238,52 +451,71 @@ public class InventoryGUI extends javax.swing.JFrame {
         });
         jScrollPane2.setViewportView(tabAdicao);
 
+        jbRegEntrada.setText("Registrar");
+        jbRegEntrada.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jbRegEntradaActionPerformed(evt);
+            }
+        });
+
+        jLabel17.setFont(new java.awt.Font("Segoe UI", 1, 18)); // NOI18N
+        jLabel17.setText("Registrar Entrada");
+
         javax.swing.GroupLayout jpEntradaLayout = new javax.swing.GroupLayout(jpEntrada);
         jpEntrada.setLayout(jpEntradaLayout);
         jpEntradaLayout.setHorizontalGroup(
             jpEntradaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(jpEntradaLayout.createSequentialGroup()
-                .addGroup(jpEntradaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addGroup(jpEntradaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
-                        .addGroup(jpEntradaLayout.createSequentialGroup()
-                            .addContainerGap()
-                            .addComponent(txValor, javax.swing.GroupLayout.PREFERRED_SIZE, 199, javax.swing.GroupLayout.PREFERRED_SIZE))
-                        .addGroup(javax.swing.GroupLayout.Alignment.LEADING, jpEntradaLayout.createSequentialGroup()
-                            .addGap(14, 14, 14)
-                            .addGroup(jpEntradaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                .addComponent(jScrollPane2, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addContainerGap(37, Short.MAX_VALUE))
+            .addGroup(jpEntradaLayout.createSequentialGroup()
+                .addGroup(jpEntradaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
+                    .addGroup(jpEntradaLayout.createSequentialGroup()
+                        .addContainerGap()
+                        .addComponent(txValorEntrada, javax.swing.GroupLayout.PREFERRED_SIZE, 199, javax.swing.GroupLayout.PREFERRED_SIZE))
+                    .addGroup(javax.swing.GroupLayout.Alignment.LEADING, jpEntradaLayout.createSequentialGroup()
+                        .addGap(14, 14, 14)
+                        .addGroup(jpEntradaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                            .addComponent(jLabel9)
+                            .addGroup(jpEntradaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
+                                .addComponent(jLabel17)
                                 .addGroup(jpEntradaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
                                     .addComponent(jLabel8)
                                     .addComponent(jLabel7)
                                     .addComponent(jLabel6)
-                                    .addComponent(txID)
-                                    .addComponent(txData, javax.swing.GroupLayout.PREFERRED_SIZE, 182, javax.swing.GroupLayout.PREFERRED_SIZE)
-                                    .addComponent(txAdd, javax.swing.GroupLayout.DEFAULT_SIZE, 200, Short.MAX_VALUE))
-                                .addComponent(jLabel9))))
-                    .addComponent(jScrollPane2, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
-                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+                                    .addComponent(txSkuEntrada)
+                                    .addComponent(txDataEntrada, javax.swing.GroupLayout.PREFERRED_SIZE, 182, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                    .addComponent(txQtdEntrada, javax.swing.GroupLayout.DEFAULT_SIZE, 200, Short.MAX_VALUE))))))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                .addComponent(jbRegEntrada)
+                .addGap(65, 65, 65))
         );
         jpEntradaLayout.setVerticalGroup(
             jpEntradaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(jpEntradaLayout.createSequentialGroup()
-                .addGap(25, 25, 25)
-                .addComponent(jLabel6)
+                .addContainerGap()
+                .addComponent(jLabel17)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addComponent(txID, javax.swing.GroupLayout.PREFERRED_SIZE, 22, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGroup(jpEntradaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(jLabel6)
+                    .addComponent(jbRegEntrada))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(txSkuEntrada, javax.swing.GroupLayout.PREFERRED_SIZE, 22, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addGap(18, 18, 18)
                 .addComponent(jLabel7)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addComponent(txData, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addComponent(txDataEntrada, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addGap(18, 18, 18)
                 .addComponent(jLabel8)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addComponent(txAdd, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addComponent(txQtdEntrada, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addGap(18, 18, 18)
                 .addComponent(jLabel9)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                .addComponent(txValor, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addComponent(txValorEntrada, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addComponent(jScrollPane2, javax.swing.GroupLayout.PREFERRED_SIZE, 265, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addContainerGap(193, Short.MAX_VALUE))
+                .addContainerGap(174, Short.MAX_VALUE))
         );
 
         tab.addTab("", jpEntrada);
@@ -294,9 +526,9 @@ public class InventoryGUI extends javax.swing.JFrame {
 
         jLabel12.setText("Quantidade a ser Removida");
 
-        jTextField1.addActionListener(new java.awt.event.ActionListener() {
+        txQtdSaida.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jTextField1ActionPerformed(evt);
+                txQtdSaidaActionPerformed(evt);
             }
         });
 
@@ -321,6 +553,16 @@ public class InventoryGUI extends javax.swing.JFrame {
         });
         jScrollPane3.setViewportView(tabRemocao);
 
+        jbRegSaida.setText("Registrar");
+        jbRegSaida.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jbRegSaidaActionPerformed(evt);
+            }
+        });
+
+        jLabel18.setFont(new java.awt.Font("Segoe UI", 1, 18)); // NOI18N
+        jLabel18.setText("Registar Saida");
+
         javax.swing.GroupLayout jpSaidaLayout = new javax.swing.GroupLayout(jpSaida);
         jpSaida.setLayout(jpSaidaLayout);
         jpSaidaLayout.setHorizontalGroup(
@@ -328,23 +570,35 @@ public class InventoryGUI extends javax.swing.JFrame {
             .addGroup(jpSaidaLayout.createSequentialGroup()
                 .addGap(16, 16, 16)
                 .addGroup(jpSaidaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addComponent(jScrollPane3, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                    .addGroup(jpSaidaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
-                        .addComponent(jLabel12)
-                        .addComponent(txDataSaida, javax.swing.GroupLayout.DEFAULT_SIZE, 188, Short.MAX_VALUE)
-                        .addComponent(jLabel10)
-                        .addComponent(txSKUE)
-                        .addComponent(jLabel11)
-                        .addComponent(jTextField1)))
-                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+                    .addGroup(jpSaidaLayout.createSequentialGroup()
+                        .addComponent(jLabel18)
+                        .addGap(0, 0, Short.MAX_VALUE))
+                    .addGroup(jpSaidaLayout.createSequentialGroup()
+                        .addComponent(jScrollPane3, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                        .addContainerGap(21, Short.MAX_VALUE))
+                    .addGroup(jpSaidaLayout.createSequentialGroup()
+                        .addGroup(jpSaidaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
+                            .addComponent(jLabel12)
+                            .addComponent(txDataSaida, javax.swing.GroupLayout.DEFAULT_SIZE, 188, Short.MAX_VALUE)
+                            .addComponent(jLabel10)
+                            .addComponent(txSkuSaida)
+                            .addComponent(jLabel11)
+                            .addComponent(txQtdSaida))
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                        .addComponent(jbRegSaida)
+                        .addGap(36, 36, 36))))
         );
         jpSaidaLayout.setVerticalGroup(
             jpSaidaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(jpSaidaLayout.createSequentialGroup()
-                .addGap(36, 36, 36)
-                .addComponent(jLabel10)
+                .addGap(11, 11, 11)
+                .addComponent(jLabel18)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addComponent(txSKUE, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGroup(jpSaidaLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(jLabel10)
+                    .addComponent(jbRegSaida))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(txSkuSaida, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addGap(18, 18, 18)
                 .addComponent(jLabel11)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
@@ -352,10 +606,10 @@ public class InventoryGUI extends javax.swing.JFrame {
                 .addGap(18, 18, 18)
                 .addComponent(jLabel12)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                .addComponent(jTextField1, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addComponent(txQtdSaida, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addGap(18, 18, 18)
                 .addComponent(jScrollPane3, javax.swing.GroupLayout.PREFERRED_SIZE, 265, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addContainerGap(238, Short.MAX_VALUE))
+                .addContainerGap(225, Short.MAX_VALUE))
         );
 
         tab.addTab("", jpSaida);
@@ -366,16 +620,31 @@ public class InventoryGUI extends javax.swing.JFrame {
 
         jLabel15.setText("Saldo Total");
 
+        txSaldoTotal.setEditable(false);
         txSaldoTotal.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 txSaldoTotalActionPerformed(evt);
             }
         });
 
+        jbChecarSaldo.setText("Ver Saldo");
+        jbChecarSaldo.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jbChecarSaldoActionPerformed(evt);
+            }
+        });
+
+        jLabel16.setFont(new java.awt.Font("Segoe UI", 1, 18)); // NOI18N
+        jLabel16.setText("Consultar Saldo");
+
         javax.swing.GroupLayout jpSaldoLayout = new javax.swing.GroupLayout(jpSaldo);
         jpSaldo.setLayout(jpSaldoLayout);
         jpSaldoLayout.setHorizontalGroup(
             jpSaldoLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(jpSaldoLayout.createSequentialGroup()
+                .addGap(16, 16, 16)
+                .addComponent(jLabel16)
+                .addGap(0, 0, Short.MAX_VALUE))
             .addGroup(jpSaldoLayout.createSequentialGroup()
                 .addGap(31, 31, 31)
                 .addGroup(jpSaldoLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
@@ -385,48 +654,57 @@ public class InventoryGUI extends javax.swing.JFrame {
                         .addComponent(jLabel14)
                         .addGap(133, 133, 133))
                     .addGroup(jpSaldoLayout.createSequentialGroup()
-                        .addComponent(jLabel15)
-                        .addGap(0, 0, Short.MAX_VALUE))
-                    .addGroup(jpSaldoLayout.createSequentialGroup()
                         .addGroup(jpSaldoLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING, false)
                             .addComponent(txSaldoTotal, javax.swing.GroupLayout.DEFAULT_SIZE, 158, Short.MAX_VALUE)
-                            .addComponent(jTextField2))
+                            .addComponent(txDataInicial))
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                        .addComponent(jTextField3, javax.swing.GroupLayout.PREFERRED_SIZE, 158, javax.swing.GroupLayout.PREFERRED_SIZE)
-                        .addGap(39, 39, 39))))
+                        .addGroup(jpSaldoLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jpSaldoLayout.createSequentialGroup()
+                                .addComponent(txDataFim, javax.swing.GroupLayout.PREFERRED_SIZE, 158, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                .addGap(39, 39, 39))
+                            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jpSaldoLayout.createSequentialGroup()
+                                .addComponent(jbChecarSaldo)
+                                .addGap(86, 86, 86))))
+                    .addGroup(jpSaldoLayout.createSequentialGroup()
+                        .addComponent(jLabel15)
+                        .addGap(0, 0, Short.MAX_VALUE))))
         );
         jpSaldoLayout.setVerticalGroup(
             jpSaldoLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(jpSaldoLayout.createSequentialGroup()
-                .addGap(60, 60, 60)
+                .addGap(16, 16, 16)
+                .addComponent(jLabel16)
+                .addGap(18, 18, 18)
                 .addGroup(jpSaldoLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(jLabel13)
                     .addComponent(jLabel14))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addGroup(jpSaldoLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(jTextField2, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                    .addComponent(jTextField3, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                    .addComponent(txDataInicial, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addComponent(txDataFim, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
                 .addGap(53, 53, 53)
                 .addComponent(jLabel15)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                .addComponent(txSaldoTotal, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGroup(jpSaldoLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(txSaldoTotal, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addComponent(jbChecarSaldo))
                 .addContainerGap(524, Short.MAX_VALUE))
         );
 
         tab.addTab("", jpSaldo);
 
-        jTable2.setModel(new javax.swing.table.DefaultTableModel(
+        tabMovimentos.setModel(new javax.swing.table.DefaultTableModel(
             new Object [][] {
-                {null, null, null, null},
-                {null, null, null, null},
-                {null, null, null, null},
-                {null, null, null, null}
+                {null, null, null, null, null},
+                {null, null, null, null, null},
+                {null, null, null, null, null},
+                {null, null, null, null, null}
             },
             new String [] {
-                "Data", "SKU", "Estoque Movido", "Saldo"
+                "Data", "Tipo", "SKU", "Estoque Movido", "Saldo"
             }
         ));
-        jScrollPane4.setViewportView(jTable2);
+        jScrollPane4.setViewportView(tabMovimentos);
 
         javax.swing.GroupLayout jpMovimentosLayout = new javax.swing.GroupLayout(jpMovimentos);
         jpMovimentos.setLayout(jpMovimentosLayout);
@@ -564,9 +842,9 @@ public class InventoryGUI extends javax.swing.JFrame {
         // TODO add your handling code here:
     }//GEN-LAST:event_txPrecoActionPerformed
 
-    private void jTextField1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jTextField1ActionPerformed
+    private void txQtdSaidaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_txQtdSaidaActionPerformed
         // TODO add your handling code here:
-    }//GEN-LAST:event_jTextField1ActionPerformed
+    }//GEN-LAST:event_txQtdSaidaActionPerformed
 
     private void txSaldoTotalActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_txSaldoTotalActionPerformed
         // TODO add your handling code here:
@@ -591,6 +869,201 @@ public class InventoryGUI extends javax.swing.JFrame {
     private void btnListaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnListaActionPerformed
         tab.setSelectedIndex(4);
     }//GEN-LAST:event_btnListaActionPerformed
+
+    private void jbSalvarActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jbSalvarActionPerformed
+           
+    try {
+        int sku = Integer.parseInt(txSKU.getText());
+        String nome = txNome.getText();
+        String cat = jcCategoria.getSelectedItem().toString();
+        double preco = Double.parseDouble(txPreco.getText());
+
+        Produto p = new Produto(sku, nome, cat, preco, 0);
+        fm.addProduto(p);
+
+        atualizarTabelaProdutos();
+
+    } catch (Exception e) {
+        System.out.println("Erro ao salvar produto: " + e.getMessage());
+    }
+
+
+
+    }//GEN-LAST:event_jbSalvarActionPerformed
+
+    private void jbRegEntradaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jbRegEntradaActionPerformed
+                                         
+        try {
+        // --- Ler campos ---
+            String data = txDataEntrada.getText().trim();
+            String skuTxt = txSkuEntrada.getText().trim();
+            String qtdTxt = txQtdEntrada.getText().trim();
+            String valorTxt = txValorEntrada.getText().trim();
+
+        // --- Validar campos vazios ---
+            if (data.isEmpty() || skuTxt.isEmpty() || qtdTxt.isEmpty() || valorTxt.isEmpty()) {
+                JOptionPane.showMessageDialog(this, 
+                   "Todos os campos devem ser preenchidos!",
+                   "Erro",
+                  JOptionPane.ERROR_MESSAGE);
+                  return;
+            }
+
+        // --- Validar números ---
+            int sku, qtd;
+            double valor;
+            try {
+                sku = Integer.parseInt(skuTxt);
+                qtd = Integer.parseInt(qtdTxt);
+                valor = Double.parseDouble(valorTxt);
+            } catch (NumberFormatException ex) {
+               JOptionPane.showMessageDialog(this, 
+                    "SKU, quantidade e valor devem ser numéricos!",
+                    "Erro",
+                    JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            if (qtd <= 0) {
+                    JOptionPane.showMessageDialog(this, 
+                    "A quantidade deve ser maior que zero!",
+                    "Erro",
+                    JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            if (valor <= 0) {
+                JOptionPane.showMessageDialog(this,
+                    "O valor unitário deve ser maior que zero!",
+                    "Erro",
+                    JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+        // --- Validar SKU ---
+            Produto p = fm.getProdutoBySku(sku);
+            if (p == null) {
+                JOptionPane.showMessageDialog(this,
+                    "SKU não encontrado no cadastro de produtos!",
+                    "Erro",
+                    JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+        // --- Registrar entrada ---
+            Entrada ent = new Entrada(data, sku, qtd, valor);
+            fm.addEntrada(ent);
+
+        // --- Atualizar tabelas ---
+            atualizarTabelaProdutos();
+            atualizarTabelaEntradas();
+            atualizarTabelaSaidas();
+            atualizarTabelaMovimentos();
+
+
+        // --- Confirmação ---
+            JOptionPane.showMessageDialog(this,
+                "Entrada registrada com sucesso!",
+                "Sucesso",
+                JOptionPane.INFORMATION_MESSAGE);
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                "Erro inesperado ao registrar entrada!",
+                "Erro",
+                JOptionPane.ERROR_MESSAGE);
+        }
+
+
+    }//GEN-LAST:event_jbRegEntradaActionPerformed
+
+    private void jbRegSaidaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jbRegSaidaActionPerformed
+        try {
+        // Apenas pega a data da SAÍDA
+            String data = txDataSaida.getText().trim();
+            int sku = Integer.parseInt(txSkuSaida.getText());
+            int qtd = Integer.parseInt(txQtdSaida.getText());
+
+            if (data.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Data de saída não pode estar vazia!");
+                return;
+            }
+
+        // Valida produto
+            Produto p = fm.getProdutoBySku(sku);
+            if (p == null) {
+                JOptionPane.showMessageDialog(this, "SKU não encontrado!");
+                return;
+           }
+
+            if (p.getQuantidade() < qtd) {
+                JOptionPane.showMessageDialog(this, "Estoque insuficiente!");
+                return;
+            }
+
+        // Registrar saída
+            Saida s = new Saida(data, sku, qtd);
+            fm.addSaida(s); // salva no CSV + atualiza estoque automaticamente
+
+        // Atualizar tabelas
+            atualizarTabelaProdutos();
+            atualizarTabelaEntradas();
+            atualizarTabelaSaidas();
+            atualizarTabelaMovimentos();
+
+            JOptionPane.showMessageDialog(this, "Saída registrada com sucesso!");
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Erro ao registrar saída!");
+            e.printStackTrace();
+        }
+
+
+
+    }//GEN-LAST:event_jbRegSaidaActionPerformed
+
+    private void jbChecarSaldoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jbChecarSaldoActionPerformed
+                                                  
+    try {
+        String inicioStr = txDataInicial.getText().trim();  // <-- CORRIGIDO
+        String fimStr = txDataFim.getText().trim();
+
+        System.out.println("DEBUG inicio=" + inicioStr);
+        System.out.println("DEBUG fim=" + fimStr);
+
+        LocalDate inicio = parseDataFlex(inicioStr);
+        LocalDate fim = parseDataFlex(fimStr);
+
+        double saldo = 0;
+
+        // ENTRADAS diminuem o saldo
+        for (Entrada e : fm.getEntradas()) {
+            LocalDate data = parseDataFlex(e.getData());
+            if (!data.isBefore(inicio) && !data.isAfter(fim)) {
+                saldo -= e.getQuantidade() * e.getValorUnitario();
+            }
+        }
+
+        // SAÍDAS aumentam o saldo
+        for (Saida s : fm.getSaidas()) {
+            LocalDate data = parseDataFlex(s.getData());
+            if (!data.isBefore(inicio) && !data.isAfter(fim)) {
+                Produto p = fm.getProdutoBySku(s.getSku());
+                if (p != null) {
+                    saldo += s.getQuantidade() * p.getPrecoUnitario();
+                }
+            }
+        }
+
+        txSaldoTotal.setText(String.valueOf(saldo));
+
+    } catch (Exception e) {
+        txSaldoTotal.setText("ERRO");
+        System.out.println("Erro ao calcular saldo: " + e.getMessage());
+    }
+
+
+    }//GEN-LAST:event_jbChecarSaldoActionPerformed
 
     /**
      * @param args the command line arguments
@@ -641,6 +1114,9 @@ public class InventoryGUI extends javax.swing.JFrame {
     private javax.swing.JLabel jLabel13;
     private javax.swing.JLabel jLabel14;
     private javax.swing.JLabel jLabel15;
+    private javax.swing.JLabel jLabel16;
+    private javax.swing.JLabel jLabel17;
+    private javax.swing.JLabel jLabel18;
     private javax.swing.JLabel jLabel2;
     private javax.swing.JLabel jLabel3;
     private javax.swing.JLabel jLabel4;
@@ -654,13 +1130,11 @@ public class InventoryGUI extends javax.swing.JFrame {
     private javax.swing.JScrollPane jScrollPane2;
     private javax.swing.JScrollPane jScrollPane3;
     private javax.swing.JScrollPane jScrollPane4;
-    private javax.swing.JTable jTable1;
-    private javax.swing.JTable jTable2;
-    private javax.swing.JTextField jTextField1;
-    private javax.swing.JTextField jTextField2;
-    private javax.swing.JTextField jTextField3;
+    private javax.swing.JButton jbChecarSaldo;
     private javax.swing.JButton jbExcluir;
     private javax.swing.JButton jbNovo;
+    private javax.swing.JButton jbRegEntrada;
+    private javax.swing.JButton jbRegSaida;
     private javax.swing.JButton jbSalvar;
     private javax.swing.JComboBox<String> jcCategoria;
     private javax.swing.JScrollPane jcTabela;
@@ -671,16 +1145,21 @@ public class InventoryGUI extends javax.swing.JFrame {
     private javax.swing.JPanel jpSaldo;
     private javax.swing.JTabbedPane tab;
     private javax.swing.JTable tabAdicao;
+    private javax.swing.JTable tabMovimentos;
+    private javax.swing.JTable tabProduto;
     private javax.swing.JTable tabRemocao;
-    private javax.swing.JTextField txAdd;
-    private javax.swing.JTextField txData;
+    private javax.swing.JTextField txDataEntrada;
+    private javax.swing.JTextField txDataFim;
+    private javax.swing.JTextField txDataInicial;
     private javax.swing.JTextField txDataSaida;
-    private javax.swing.JTextField txID;
     private javax.swing.JTextField txNome;
     private javax.swing.JTextField txPreco;
+    private javax.swing.JTextField txQtdEntrada;
+    private javax.swing.JTextField txQtdSaida;
     private javax.swing.JTextField txSKU;
-    private javax.swing.JTextField txSKUE;
     private javax.swing.JTextField txSaldoTotal;
-    private javax.swing.JTextField txValor;
+    private javax.swing.JTextField txSkuEntrada;
+    private javax.swing.JTextField txSkuSaida;
+    private javax.swing.JTextField txValorEntrada;
     // End of variables declaration//GEN-END:variables
 }
